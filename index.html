@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visor y Editor 3D Avanzado</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #fff;
+        }
+        /* Panel de herramientas al frente (z-index: 20) */
+        #ui-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 20;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            width: 230px;
+            transition: transform 0.3s ease;
+        }
+        #ui-container.hidden {
+            transform: translateX(-270px);
+        }
+        #toggle-ui-btn {
+            position: absolute;
+            top: 20px;
+            left: 265px;
+            z-index: 20;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            border: none;
+            padding: 10px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            transition: left 0.3s ease;
+        }
+        #toggle-ui-btn.hidden {
+            left: 20px;
+        }
+        /* Panel de propiedades interactivo (z-index: 10) */
+        #stats-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 10;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            width: 215px;
+            font-size: 12px;
+        }
+        /* Panel de objetos abajo al frente (z-index: 20) */
+        #objects-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 20;
+            background: rgba(0, 0, 0, 0.85);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            width: 230px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
+            transition: transform 0.3s ease;
+        }
+        #objects-panel.hidden {
+            transform: translateX(-270px);
+        }
+        /* Inputs editables dentro del panel de propiedades */
+        .stat-input {
+            width: 55px;
+            background: #222;
+            border: 1px solid #444;
+            color: #00d2ff;
+            font-family: monospace;
+            font-size: 11px;
+            text-align: right;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .stat-input:focus {
+            outline: none;
+            border-color: #007bff;
+            background: #111;
+        }
+        /* Barra de progreso modal */
+        #progress-modal {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            visibility: hidden;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        #progress-modal.active {
+            visibility: visible;
+            opacity: 1;
+        }
+        .progress-box {
+            background: #222;
+            padding: 20px;
+            border-radius: 8px;
+            width: 300px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            border: 1px solid #444;
+        }
+        .progress-bar-container {
+            width: 100%;
+            background: #444;
+            height: 12px;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 15px;
+        }
+        #progress-fill {
+            width: 0%;
+            height: 100%;
+            background: #28a745;
+            transition: width 0.1s linear;
+        }
+        .object-item {
+            padding: 6px 8px;
+            margin-top: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background 0.2s;
+        }
+        .object-item:hover {
+            background: rgba(0, 123, 255, 0.4);
+        }
+        .object-item.selected {
+            background: #007bff;
+            font-weight: bold;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .btn {
+            background-color: #007bff;
+            color: white;
+            padding: 9px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            text-align: center;
+            transition: background 0.2s;
+            font-size: 13px;
+        }
+        .btn:hover { background-color: #0056b3; }
+        .btn-success { background-color: #28a745; }
+        .btn-success:hover { background-color: #218838; }
+        .btn-warning { background-color: #ffc107; color: #000; }
+        .btn-warning:hover { background-color: #e0a800; }
+        .btn-secondary { background-color: #6c757d; }
+        .btn-secondary:hover { background-color: #5a6268; }
+        .btn-secondary.active {
+            background-color: #138496;
+            border: 1px solid #fff;
+        }
+        #canvas-container { width: 100vw; height: 100vh; }
+        #info {
+            font-size: 11px;
+            color: #aaa;
+            margin-top: 5px;
+            word-break: break-all;
+        }
+        hr { border: 0; border-top: 1px solid #444; margin: 5px 0; }
+        .label-group { font-size: 12px; color: #ccc; font-weight: bold; }
+        .stat-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    </style>
+</head>
+<body>
+
+    <button id="toggle-ui-btn">Ocultar Menús</button>
+
+    <!-- Ventana Modal de Progreso de Exportación -->
+    <div id="progress-modal">
+        <div class="progress-box">
+            <div class="label-group" style="font-size: 14px;">Generando Archivo STL...</div>
+            <div id="progress-text" style="font-size: 12px; color: #aaa; margin-top: 5px;">Preparando malla (0%)</div>
+            <div class="progress-bar-container">
+                <div id="progress-fill"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="ui-container">
+        <h3>Visor & Editor 3D</h3>
+        <label for="file-input" class="btn">Abrir Archivo 3D</label>
+        <input type="file" id="file-input" accept=".obj,.stl,.gltf,.glb">
+        
+        <hr>
+        <div class="label-group">Herramientas</div>
+        <div style="display: flex; gap: 5px;">
+            <button id="mode-translate" class="btn btn-secondary active" style="flex:1;">Mover</button>
+            <button id="mode-rotate" class="btn btn-secondary" style="flex:1;">Rotar</button>
+            <button id="mode-scale" class="btn btn-secondary" style="flex:1;">Escalar</button>
+        </div>
+
+        <button id="copy-btn" class="btn btn-warning" disabled>Duplicar Objeto</button>
+        
+        <hr>
+        <button id="export-btn" class="btn btn-success" disabled>Exportar Todo a STL</button>
+        <div id="info">Carga o arrastra un archivo 3D</div>
+    </div>
+
+    <!-- Panel de lista de objetos en escena -->
+    <div id="objects-panel">
+        <div class="label-group" style="margin-bottom: 5px;">Escena (<span id="object-count">0</span> objetos)</div>
+        <div id="objects-list"></div>
+    </div>
+
+    <!-- Panel flotante de propiedades editables por teclado -->
+    <div id="stats-panel">
+        <div class="label-group" style="margin-bottom: 8px;">Propiedades (Editables)</div>
+        <div class="stat-row"><span>Pos X:</span><input type="number" step="0.1" id="pos-x" class="stat-input"></div>
+        <div class="stat-row"><span>Pos Y:</span><input type="number" step="0.1" id="pos-y" class="stat-input"></div>
+        <div class="stat-row"><span>Pos Z:</span><input type="number" step="0.1" id="pos-z" class="stat-input"></div>
+        <hr style="border-top: 1px dashed #444;">
+        <div class="stat-row"><span>Rot X (°):</span><input type="number" step="1" id="rot-x" class="stat-input"></div>
+        <div class="stat-row"><span>Rot Y (°):</span><input type="number" step="1" id="rot-y" class="stat-input"></div>
+        <div class="stat-row"><span>Rot Z (°):</span><input type="number" step="1" id="rot-z" class="stat-input"></div>
+        <hr style="border-top: 1px dashed #444;">
+        <div class="stat-row"><span>Escala X:</span><input type="number" step="0.1" id="scale-x" class="stat-input"></div>
+        <div class="stat-row"><span>Escala Y:</span><input type="number" step="0.1" id="scale-y" class="stat-input"></div>
+        <div class="stat-row"><span>Escala Z:</span><input type="number" step="0.1" id="scale-z" class="stat-input"></div>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { TransformControls } from 'three/addons/controls/TransformControls.js';
+        import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+
+        let scene, camera, renderer, orbitControls, transformControls;
+        let selectedObject = null;
+        let defaultMaterial;
+        let objectCounter = 1;
+        let isEditingInput = false; // Para evitar que se sobrescriban los inputs mientras escribes
+
+        const fileInput = document.getElementById('file-input');
+        const exportBtn = document.getElementById('export-btn');
+        const copyBtn = document.getElementById('copy-btn');
+        const infoDiv = document.getElementById('info');
+        const uiContainer = document.getElementById('ui-container');
+        const objectsPanel = document.getElementById('objects-panel');
+        const toggleUiBtn = document.getElementById('toggle-ui-btn');
+        const objectsListDiv = document.getElementById('objects-list');
+        const objectCountSpan = document.getElementById('object-count');
+
+        const progressModal = document.getElementById('progress-modal');
+        const progressFill = document.getElementById('progress-fill');
+        const progressText = document.getElementById('progress-text');
+
+        const btnTranslate = document.getElementById('mode-translate');
+        const btnRotate = document.getElementById('mode-rotate');
+        const btnScale = document.getElementById('mode-scale');
+
+        const posX = document.getElementById('pos-x');
+        const posY = document.getElementById('pos-y');
+        const posZ = document.getElementById('pos-z');
+        const rotX = document.getElementById('rot-x');
+        const rotY = document.getElementById('rot-y');
+        const rotZ = document.getElementById('rot-z');
+        const scaleX = document.getElementById('scale-x');
+        const scaleY = document.getElementById('scale-y');
+        const scaleZ = document.getElementById('scale-z');
+
+        init();
+        animate();
+
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x1a1a1a);
+
+            camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 50, 100);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.shadowMap.enabled = true;
+            container.appendChild(renderer.domElement);
+
+            orbitControls = new OrbitControls(camera, renderer.domElement);
+            orbitControls.enableDamping = true;
+
+            transformControls = new TransformControls(camera, renderer.domElement);
+            scene.add(transformControls);
+
+            transformControls.addEventListener('dragging-changed', (event) => {
+                orbitControls.enabled = !event.value;
+            });
+
+            defaultMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x00d2ff, 
+                roughness: 0.4, 
+                metalness: 0.2 
+            });
+
+            scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(50, 100, 50);
+            scene.add(dirLight);
+
+            const gridHelper = new THREE.GridHelper(200, 50, 0x444444, 0x222222);
+            gridHelper.position.y = -1;
+            scene.add(gridHelper);
+
+            // Eventos UI
+            fileInput.addEventListener('change', (e) => { if (e.target.files[0]) processFile(e.target.files[0]); });
+            exportBtn.addEventListener('click', exportToSTLWithProgress);
+            copyBtn.addEventListener('click', copySelectedObject);
+
+            toggleUiBtn.addEventListener('click', () => {
+                uiContainer.classList.toggle('hidden');
+                objectsPanel.classList.toggle('hidden');
+                toggleUiBtn.classList.toggle('hidden');
+                toggleUiBtn.textContent = uiContainer.classList.contains('hidden') ? 'Mostrar Menús' : 'Ocultar Menús';
+            });
+
+            btnTranslate.addEventListener('click', () => { transformControls.setMode('translate'); setActiveBtn(btnTranslate); });
+            btnRotate.addEventListener('click', () => { transformControls.setMode('rotate'); setActiveBtn(btnRotate); });
+            btnScale.addEventListener('click', () => { transformControls.setMode('scale'); setActiveBtn(btnScale); });
+
+            // Configurar eventos de actualización por teclado en los inputs numéricos
+            setupInputListeners();
+
+            window.addEventListener('pointerdown', onPointerDown);
+
+            window.addEventListener('dragover', (e) => e.preventDefault());
+            window.addEventListener('drop', (e) => {
+                e.preventDefault();
+                if (e.dataTransfer.files.length > 0) processFile(e.dataTransfer.files[0]);
+            });
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function setActiveBtn(activeBtn) {
+            [btnTranslate, btnRotate, btnScale].forEach(b => b.classList.remove('active'));
+            activeBtn.classList.add('active');
+        }
+
+        function setupInputListeners() {
+            const inputs = [posX, posY, posZ, rotX, rotY, rotZ, scaleX, scaleY, scaleZ];
+            
+            inputs.forEach(input => {
+                input.addEventListener('focus', () => { isEditingInput = true; });
+                input.addEventListener('blur', () => { isEditingInput = false; applyInputValues(); });
+                input.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter') {
+                        input.blur();
+                    }
+                });
+            });
+        }
+
+        function applyInputValues() {
+            if (!selectedObject) return;
+
+            selectedObject.position.set(
+                parseFloat(posX.value) || 0,
+                parseFloat(posY.value) || 0,
+                parseFloat(posZ.value) || 0
+            );
+
+            selectedObject.rotation.set(
+                THREE.MathUtils.degToRad(parseFloat(rotX.value) || 0),
+                THREE.MathUtils.degToRad(parseFloat(rotY.value) || 0),
+                THREE.MathUtils.degToRad(parseFloat(rotZ.value) || 0)
+            );
+
+            selectedObject.scale.set(
+                parseFloat(scaleX.value) || 1,
+                parseFloat(scaleY.value) || 1,
+                parseFloat(scaleZ.value) || 1
+            );
+        }
+
+        function processFile(file) {
+            const fileName = file.name;
+            const fileLower = fileName.toLowerCase();
+            const reader = new FileReader();
+            infoDiv.textContent = `Cargando: ${fileName}...`;
+
+            if (fileLower.endsWith('.stl')) {
+                reader.readAsArrayBuffer(file);
+                reader.onload = (e) => {
+                    const geometry = new STLLoader().parse(e.target.result);
+                    geometry.computeVertexNormals();
+                    const mesh = new THREE.Mesh(geometry, defaultMaterial.clone());
+                    const group = new THREE.Group();
+                    group.name = `Objeto_${objectCounter++} (${fileName})`;
+                    group.add(mesh);
+                    finalizeModelImport(group);
+                };
+            } else if (fileLower.endsWith('.obj')) {
+                reader.readAsText(file);
+                reader.onload = (e) => {
+                    const obj = new OBJLoader().parse(e.target.result);
+                    const group = new THREE.Group();
+                    group.name = `Objeto_${objectCounter++} (${fileName})`;
+                    obj.traverse((child) => {
+                        if (child.isMesh) {
+                            child.material = defaultMaterial.clone();
+                            group.add(child.clone());
+                        }
+                    });
+                    finalizeModelImport(group);
+                };
+            } else if (fileLower.endsWith('.gltf') || fileLower.endsWith('.glb')) {
+                reader.readAsArrayBuffer(file);
+                reader.onload = (e) => {
+                    new GLTFLoader().parse(e.target.result, '', (gltf) => {
+                        const group = new THREE.Group();
+                        group.name = `Objeto_${objectCounter++} (${fileName})`;
+                        gltf.scene.traverse((child) => {
+                            if (child.isMesh) {
+                                child.material = defaultMaterial.clone();
+                                group.add(child.clone());
+                            }
+                        });
+                        finalizeModelImport(group);
+                    }, () => { infoDiv.textContent = 'Error al cargar GLTF'; });
+                };
+            } else {
+                alert('Formato no soportado.');
+            }
+        }
+
+        function finalizeModelImport(modelGroup) {
+            const box = new THREE.Box3().setFromObject(modelGroup);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            modelGroup.position.sub(center);
+
+            scene.add(modelGroup);
+            selectObject(modelGroup);
+            updateObjectsListUI();
+
+            const maxDim = Math.max(size.x, size.y, size.z);
+            camera.position.set(0, maxDim * 1.5, maxDim * 2.5);
+            orbitControls.target.set(0, 0, 0);
+            orbitControls.update();
+
+            exportBtn.disabled = false;
+            copyBtn.disabled = false;
+            infoDiv.textContent = `Activo: ${modelGroup.name}`;
+        }
+
+        function selectObject(obj) {
+            selectedObject = obj;
+            if (obj) {
+                transformControls.attach(obj);
+            } else {
+                transformControls.detach();
+            }
+            updateObjectsListUI();
+        }
+
+        function onPointerDown(event) {
+            if (!uiContainer.classList.contains('hidden') && event.clientX < 260 && event.clientY < 310) return;
+            if (!objectsPanel.classList.contains('hidden') && event.clientX < 260 && event.clientY > window.innerHeight - 220) return;
+            if (event.clientX > window.innerWidth - 235 && event.clientY < 260) return; // Evitar clic dentro del panel de propiedades
+            if (event.clientX < 140 && event.clientY < 70) return; 
+            if (transformControls.dragging) return;
+
+            const raycaster = new THREE.Raycaster();
+            const mouse = new THREE.Vector2();
+
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(scene.children, true);
+
+            if (intersects.length > 0) {
+                let hit = intersects[0].object;
+                while (hit.parent && hit.parent !== scene) {
+                    hit = hit.parent;
+                }
+
+                if (hit && hit !== scene && hit !== transformControls && !hit.isGridHelper && !hit.isLight) {
+                    selectObject(hit);
+                }
+            }
+        }
+
+        function copySelectedObject() {
+            if (!selectedObject) return;
+
+            const clone = selectedObject.clone(true);
+            clone.name = selectedObject.name + ' (Copia)';
+            objectCounter++;
+
+            clone.position.set(0, 0, 0);
+            clone.rotation.copy(selectedObject.rotation);
+            clone.scale.copy(selectedObject.scale);
+
+            clone.traverse((child) => {
+                if (child.isMesh) child.material = defaultMaterial.clone();
+            });
+
+            scene.add(clone);
+            selectObject(clone);
+            updateObjectsListUI();
+            infoDiv.textContent = 'Objeto duplicado en el centro (0,0,0)';
+        }
+
+        function exportToSTLWithProgress() {
+            progressModal.classList.add('active');
+            progressFill.style.width = '0%';
+            progressText.textContent = 'Analizando escena y geometrías (25%)';
+
+            setTimeout(() => {
+                progressFill.style.width = '50%';
+                progressText.textContent = 'Procesando vértices y normales (60%)';
+
+                setTimeout(() => {
+                    progressFill.style.width = '85%';
+                    progressText.textContent = 'Compilando archivo STL binario (90%)';
+
+                    setTimeout(() => {
+                        const exporter = new STLExporter();
+                        const result = exporter.parse(scene, { binary: true });
+
+                        progressFill.style.width = '100%';
+                        progressText.textContent = '¡Exportación completada! (100%)';
+
+                        setTimeout(() => {
+                            const blob = new Blob([result], { type: 'application/octet-stream' });
+                            const link = document.createElement('a');
+                            link.href = URL.createObjectURL(blob);
+                            link.download = 'escena_exportada.stl';
+                            link.click();
+                            URL.revokeObjectURL(link.href);
+
+                            progressModal.classList.remove('active');
+                        }, 400);
+                    }, 300);
+                }, 300);
+            }, 300);
+        }
+
+        function updateObjectsListUI() {
+            objectsListDiv.innerHTML = '';
+            let count = 0;
+
+            scene.children.forEach((child) => {
+                if (child.isGroup && child !== transformControls) {
+                    count++;
+                    const item = document.createElement('div');
+                    item.className = 'object-item' + (child === selectedObject ? ' selected' : '');
+                    item.textContent = child.name || `Objeto ${count}`;
+                    
+                    item.addEventListener('click', () => {
+                        selectObject(child);
+                    });
+
+                    objectsListDiv.appendChild(item);
+                }
+            });
+
+            objectCountSpan.textContent = count;
+        }
+
+        function updateStatsPanel() {
+            // Solo actualiza los inputs si el usuario no está escribiendo activamente en ellos
+            if (selectedObject && !isEditingInput) {
+                posX.value = selectedObject.position.x.toFixed(2);
+                posY.value = selectedObject.position.y.toFixed(2);
+                posZ.value = selectedObject.position.z.toFixed(2);
+
+                rotX.value = THREE.MathUtils.radToDeg(selectedObject.rotation.x).toFixed(0);
+                rotY.value = THREE.MathUtils.radToDeg(selectedObject.rotation.y).toFixed(0);
+                rotZ.value = THREE.MathUtils.radToDeg(selectedObject.rotation.z).toFixed(0);
+
+                scaleX.value = selectedObject.scale.x.toFixed(2);
+                scaleY.value = selectedObject.scale.y.toFixed(2);
+                scaleZ.value = selectedObject.scale.z.toFixed(2);
+            } else if (!selectedObject && !isEditingInput) {
+                posX.value = '';
+                posY.value = '';
+                posZ.value = '';
+                rotX.value = '';
+                rotY.value = '';
+                rotZ.value = '';
+                scaleX.value = '';
+                scaleY.value = '';
+                scaleZ.value = '';
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            orbitControls.update();
+            updateStatsPanel();
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
